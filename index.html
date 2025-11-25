@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Agenda Dany · Reserva</title>
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:"Inter",sans-serif;}
+body{background:#f7f3f1;padding:20px;color:#333;}
+:root{
+ --rosa:#e9b7c7;
+ --rosa2:#f5d9e2;
+ --borde:#f0e7e4;
+ --text-dark:#4a3a3a;
+ --muted:#a08b7e;
+ --beige:#f8f5f3;
+}
+.contenedor{max-width:900px;margin:auto;background:white;padding:25px;border-radius:20px;box-shadow:0 4px 20px rgba(0,0,0,0.05);}
+
+.header{display:flex;gap:15px;align-items:center;background:var(--rosa2);padding:20px;border-radius:18px;}
+.header .img{width:60px;height:60px;background:var(--rosa);border-radius:12px;display:flex;align-items:center;justify-content:center;color:white;font-size:22px;font-weight:700;}
+.header h2{color:var(--text-dark);font-size:22px;}
+
+.bloque{background:white;margin-top:25px;padding:25px;border-radius:18px;box-shadow:0 2px 12px rgba(0,0,0,0.04);}
+.titulo{font-size:20px;font-weight:600;margin-bottom:10px;color:var(--text-dark);}
+.sub{font-size:14px;color:var(--muted);margin-bottom:15px;}
+
+.controls{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+.controls button{background:var(--rosa);color:white;border:none;padding:8px 12px;border-radius:8px;cursor:pointer;}
+.month-label{font-size:18px;font-weight:600;color:var(--text-dark);}
+
+.calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:10px;}
+.weekday{text-align:center;font-size:13px;color:var(--muted);}
+.day{background:linear-gradient(180deg,#fff,var(--beige));border-radius:12px;padding:10px;height:90px;border:1px solid var(--borde);cursor:pointer;transition:0.15s;display:flex;align-items:flex-start;justify-content:flex-start;font-size:14px;}
+.day:hover{transform:translateY(-4px);}
+.day.disabled{opacity:0.35;pointer-events:none;}
+.selected{border:2px solid var(--rosa);}
+
+.slots{margin-top:15px;display:flex;flex-wrap:wrap;gap:10px;}
+.slot{padding:10px 15px;background:white;border-radius:8px;border:1px solid var(--rosa);cursor:pointer;}
+.slot.selected{background:var(--rosa);color:white;}
+
+form{margin-top:25px;display:flex;flex-direction:column;gap:15px;}
+input,textarea{width:100%;padding:12px;border:1px solid var(--borde);border-radius:10px;}
+button.reservar{background:var(--rosa);color:white;padding:15px;border:none;border-radius:12px;font-size:16px;cursor:pointer;}
+</style>
+</head>
+
+<body>
+<div class="contenedor">
+  <div class="header">
+    <div class="img">DA</div>
+    <div>
+      <h2>Dany Avendaño</h2>
+      <p class="sub">Psicóloga & Coach Holística · Acompañamiento emocional</p>
+    </div>
+  </div>
+
+  <div class="bloque">
+    <p class="sub">Selecciona un día disponible</p>
+
+    <div class="controls">
+      <button id="prev">◀</button>
+      <span class="month-label" id="monthLabel"></span>
+      <button id="next">▶</button>
+    </div>
+
+    <div class="calendar" id="calendar"></div>
+  </div>
+
+  <div class="bloque">
+    <h3 class="titulo">Tu reserva</h3>
+    <p class="sub" id="infoSeleccion">Aún no elegiste fecha ni horario</p>
+
+    <div class="slots" id="slots"></div>
+
+    <form id="reservaForm">
+      <input type="text" id="nombre" placeholder="Tu nombre" required />
+      <textarea id="comentario" placeholder="Comentario (opcional)"></textarea>
+      <button class="reservar" type="submit">Confirmar reserva</button>
+    </form>
+  </div>
+</div>
+
+
+<script type="module">
+import { createClient } from "https://esm.sh/@supabase/supabase-js";
+
+const supabase = createClient(
+ "https://vplevkocjzwpjjayfrzi.supabase.co",
+ "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZwbGV2a29janp3cGpqYXlmcnppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQwMTQ0NTAsImV4cCI6MjA3OTU5MDQ1MH0.Q4Iv9-l-8hadexj3NKXeB4n-mj8TiGZCl9VabJYQC2k"
+);
+
+let currentDate = new Date();
+let selectedDay = null;
+let selectedSlot = null;
+
+const calendar = document.getElementById("calendar");
+const monthLabel = document.getElementById("monthLabel");
+const slotsDiv = document.getElementById("slots");
+const infoText = document.getElementById("infoSeleccion");
+
+// HORARIOS CON 15 MIN DE DESCANSO
+const horarios = [
+ "15:00 - 16:00",
+ "16:15 - 17:15",
+ "17:30 - 18:30"
+];
+
+// WHATSAPP
+function redirigirWhatsapp(nombre, fecha, hora) {
+  const numero = "5215527027808";
+  const texto = encodeURIComponent(`Hola, soy ${nombre}. Confirmo mi reserva para el ${fecha} a las ${hora}.`);
+  window.open(`https://wa.me/${numero}?text=${texto}`, "_blank");
+}
+
+// RENDER CALENDARIO
+function renderCalendar() {
+  calendar.innerHTML = "";
+
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+
+  const monthNames = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+  monthLabel.textContent = `${monthNames[month]} ${year}`;
+
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  const diasSemana = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+  diasSemana.forEach(d => {
+    const div = document.createElement("div");
+    div.classList.add("weekday");
+    div.textContent = d;
+    calendar.appendChild(div);
+  });
+
+  for (let i = 0; i < firstDay; i++) {
+    calendar.appendChild(document.createElement("div"));
+  }
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const div = document.createElement("div");
+    div.classList.add("day");
+    div.textContent = d;
+
+    div.onclick = () => selectDay(d, month + 1, year);
+
+    calendar.appendChild(div);
+  }
+}
+
+// SELECCIONAR DÍA
+async function selectDay(day, month, year) {
+  selectedDay = `${year}-${String(month).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+  infoText.textContent = `Elegiste: ${selectedDay}`;
+  renderSlots();
+}
+
+// RENDER HORARIOS
+async function renderSlots() {
+  slotsDiv.innerHTML = "Cargando...";
+
+  const { data } = await supabase.from("reservas").select("hora").eq("fecha", selectedDay);
+  const reservadas = data ? data.map(r => r.hora) : [];
+
+  slotsDiv.innerHTML = "";
+
+  horarios.forEach(h => {
+    const div = document.createElement("div");
+    div.classList.add("slot");
+    div.textContent = h;
+
+    if (reservadas.includes(h)) {
+      div.classList.add("disabled");
+      div.style.opacity = "0.4";
+      div.style.pointerEvents = "none";
+    }
+
+    div.onclick = () => {
+      document.querySelectorAll(".slot").forEach(s => s.classList.remove("selected"));
+      div.classList.add("selected");
+      selectedSlot = h;
+      infoText.textContent = `Elegiste: ${selectedDay} a las ${selectedSlot}`;
+    };
+
+    slotsDiv.appendChild(div);
+  });
+}
+
+// FORM SUBMIT
+document.getElementById("reservaForm").onsubmit = async function(e) {
+  e.preventDefault();
+
+  if (!selectedDay || !selectedSlot) {
+    alert("Selecciona fecha y horario.");
+    return;
+  }
+
+  const nombre = document.getElementById("nombre").value;
+
+  await supabase.from("reservas").insert({
+    fecha: selectedDay,
+    hora: selectedSlot,
+    nombre
+  });
+
+  redirigirWhatsapp(nombre, selectedDay, selectedSlot);
+};
+
+// NAVEGACIÓN MES
+document.getElementById("prev").onclick = () => {
+  currentDate.setMonth(currentDate.getMonth() - 1);
+  renderCalendar();
+};
+document.getElementById("next").onclick = () => {
+  currentDate.setMonth(currentDate.getMonth() + 1);
+  renderCalendar();
+};
+
+renderCalendar();
+</script>
+
+</body>
+</html>
